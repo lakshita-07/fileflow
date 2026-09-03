@@ -9,7 +9,7 @@ import {
 } from "../utils/scanProcessing"
 import {
   downloadBlob
-} from "../utils/pdfExport"
+} from "pdfExport"
 
 export default function Resize() {
   const [file, setFile] =
@@ -23,7 +23,8 @@ export default function Resize() {
 
   const [height, setHeight] =
     useState(1600)
-
+  const [originalWidth, setOriginalWidth] = useState(0)
+  const [originalHeight, setOriginalHeight] = useState(0)
   const [percentage, setPercentage] =
     useState(100)
 

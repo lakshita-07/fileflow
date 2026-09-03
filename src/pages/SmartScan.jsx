@@ -102,58 +102,23 @@ function CornerEditor({ corners, setCorners }) {
   className="absolute inset-0 w-full h-full"
   preserveAspectRatio="none"
 >
-  {/* Selected document area */}
   <polygon
     points={corners
       .map(c => `${c.x}%,${c.y}%`)
       .join(" ")}
-    fill="rgba(27,49,37,0.12)"
+    fill="none"
     stroke="#1b3125"
+    strokeWidth="6"
+    vectorEffect="non-scaling-stroke"
+  />
+
+  <polygon
+    points={corners
+      .map(c => `${c.x}%,${c.y}%`)
+      .join(" ")}
+    fill="none"
+    stroke="#ffffff"
     strokeWidth="3"
-    vectorEffect="non-scaling-stroke"
-  />
-
-  {/* Top line */}
-  <line
-    x1={`${corners[0].x}%`}
-    y1={`${corners[0].y}%`}
-    x2={`${corners[1].x}%`}
-    y2={`${corners[1].y}%`}
-    stroke="#ffffff"
-    strokeWidth="4"
-    vectorEffect="non-scaling-stroke"
-  />
-
-  {/* Right line */}
-  <line
-    x1={`${corners[1].x}%`}
-    y1={`${corners[1].y}%`}
-    x2={`${corners[2].x}%`}
-    y2={`${corners[2].y}%`}
-    stroke="#ffffff"
-    strokeWidth="4"
-    vectorEffect="non-scaling-stroke"
-  />
-
-  {/* Bottom line */}
-  <line
-    x1={`${corners[2].x}%`}
-    y1={`${corners[2].y}%`}
-    x2={`${corners[3].x}%`}
-    y2={`${corners[3].y}%`}
-    stroke="#ffffff"
-    strokeWidth="4"
-    vectorEffect="non-scaling-stroke"
-  />
-
-  {/* Left line */}
-  <line
-    x1={`${corners[3].x}%`}
-    y1={`${corners[3].y}%`}
-    x2={`${corners[0].x}%`}
-    y2={`${corners[0].y}%`}
-    stroke="#ffffff"
-    strokeWidth="4"
     vectorEffect="non-scaling-stroke"
   />
 </svg>
@@ -878,39 +843,6 @@ export default function SmartScan() {
 
   return (
     <div className="min-h-screen bg-[#f4fbf9] text-[#1a1f1d]">
-
-      {/* HEADER */}
-
-      <header className="sticky top-0 z-30 border-b border-[#c2c8c2] bg-[#f4fbf9]/95 backdrop-blur">
-        <div className="max-w-[1280px] mx-auto px-6 py-4 flex items-center justify-between">
-
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-[#1b3125] text-white flex items-center justify-center font-bold">
-              F
-            </div>
-
-            <span className="text-xl font-bold">
-              FileFlow
-            </span>
-          </div>
-
-          <nav className="hidden md:flex items-center gap-7 text-sm font-medium">
-            <span>Dashboard</span>
-            <span className="text-[#1b3125] font-bold">
-              Smart Scan
-            </span>
-            <span>Convert</span>
-            <span>Compress</span>
-            <span>Resize</span>
-            <span>PDF Tools</span>
-          </nav>
-
-          <div className="border border-[#737973] rounded-full px-4 py-2 text-xs font-semibold">
-            ✓ 100% Private
-          </div>
-
-        </div>
-      </header>
 
       <main className="max-w-[1280px] mx-auto px-6 py-8">
 

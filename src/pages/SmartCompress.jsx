@@ -5,7 +5,7 @@ import {
 } from "../utils/scanProcessing"
 import {
   downloadBlob
-} from "../utils/pdfExport"
+} from "pdfExport"
 
 export default function SmartCompress() {
   const [file, setFile] =
@@ -23,21 +23,33 @@ export default function SmartCompress() {
   const [message, setMessage] =
     useState("")
 
-  async function selectFile(files) {
-    const selected = files[0]
+  const selectFile = (e) => {
+    const selected = e.target.files?.[0]
 
-    if (!selected) return
+  if (!selected) return
 
-    setFile(selected)
-
-    if (
-      selected.type.startsWith("image/")
-    ) {
-      setPreview(
-        await fileToDataURL(selected)
-      )
-    }
+  if (!selected.type.startsWith("image/")) {
+    return
   }
+
+  setFile(selected)
+
+  const reader = new FileReader()
+
+  reader.onload = async () => {
+    const image = await loadImage(reader.result)
+
+    setPreview(reader.result)
+
+    setOriginalWidth(image.naturalWidth)
+    setOriginalHeight(image.naturalHeight)
+
+    setWidth(image.naturalWidth)
+    setHeight(image.naturalHeight)
+  }
+
+  reader.readAsDataURL(selected)
+}
 
   async function compress() {
     if (!file) {
