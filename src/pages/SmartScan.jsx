@@ -1,18 +1,25 @@
 import { useEffect, useRef, useState } from "react"
+
 import {
   applyFilters,
   detectDocumentCorners,
   perspectiveCorrect,
-  rotateImage,
-  cropImage
+  rotateImage
 } from "../utils/scanProcessing"
+
 import { imagesToPDF, downloadBlob } from "../utils/pdfexport"
+
 
 function fileSize(bytes) {
   if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`
+  }
+
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
+
 
 function loadImage(src) {
   return new Promise((resolve, reject) => {
@@ -25,23 +32,32 @@ function loadImage(src) {
   })
 }
 
-function imageToDataURL(img, type = "image/jpeg", quality = 0.9) {
+
+function imageToDataURL(
+  img,
+  type = "image/jpeg",
+  quality = 0.9
+) {
   const canvas = document.createElement("canvas")
 
   canvas.width = img.naturalWidth || img.width
   canvas.height = img.naturalHeight || img.height
 
   const ctx = canvas.getContext("2d")
+
   ctx.drawImage(img, 0, 0)
 
   return canvas.toDataURL(type, quality)
 }
 
+
 function dataURLToBlob(dataURL) {
   const parts = dataURL.split(",")
+
   const mime = parts[0].match(/:(.*?);/)[1]
 
   const binary = atob(parts[1])
+
   const array = new Uint8Array(binary.length)
 
   for (let i = 0; i < binary.length; i++) {
@@ -51,7 +67,12 @@ function dataURLToBlob(dataURL) {
   return new Blob([array], { type: mime })
 }
 
-function CornerEditor({ corners, setCorners }) {
+
+/* =========================================================
+  FOUR-POINT CROP EDITOR
+  ========================================================= */
+
+function CropEditor({ corners, setCorners }) {
   const containerRef = useRef(null)
   const dragging = useRef(null)
 
@@ -69,19 +90,39 @@ function CornerEditor({ corners, setCorners }) {
     if (dragging.current === null) return
 
     const container = containerRef.current
+
     if (!container) return
 
     const rect = container.getBoundingClientRect()
 
-    let x = ((e.clientX - rect.left) / rect.width) * 100
-    let y = ((e.clientY - rect.top) / rect.height) * 100
+    let x =
+      ((e.clientX - rect.left) / rect.width) * 100
 
-    x = Math.max(0, Math.min(100, x))
-    y = Math.max(0, Math.min(100, y))
+    let y =
+      ((e.clientY - rect.top) / rect.height) * 100
+
+    x = Math.max(2, Math.min(98, x))
+    y = Math.max(2, Math.min(98, y))
 
     setCorners(prev => {
       const updated = [...prev]
-      updated[dragging.current] = { x, y }
+
+      if (dragging.current === 0) {
+        updated[0] = { x, y }
+      }
+
+      if (dragging.current === 1) {
+        updated[1] = { x, y }
+      }
+
+      if (dragging.current === 2) {
+        updated[2] = { x, y }
+      }
+
+      if (dragging.current === 3) {
+        updated[3] = { x, y }
+      }
+
       return updated
     })
   }
@@ -89,66 +130,113 @@ function CornerEditor({ corners, setCorners }) {
   function stopDrag() {
     dragging.current = null
 
-    window.removeEventListener("pointermove", moveCorner)
-    window.removeEventListener("pointerup", stopDrag)
+    window.removeEventListener(
+      "pointermove",
+      moveCorner
+    )
+
+    window.removeEventListener(
+      "pointerup",
+      stopDrag
+    )
   }
+
+  const points = corners
+    .map(corner => `${corner.x},${corner.y}`)
+    .join(",")
 
   return (
     <div
       ref={containerRef}
       className="absolute inset-0 pointer-events-none"
     >
-<svg
-  className="absolute inset-0 w-full h-full"
-  preserveAspectRatio="none"
->
-  <polygon
-    points={corners
-      .map(c => `${c.x}%,${c.y}%`)
-      .join(" ")}
-    fill="none"
-    stroke="#1b3125"
-    strokeWidth="6"
-    vectorEffect="non-scaling-stroke"
-  />
 
-  <polygon
-    points={corners
-      .map(c => `${c.x}%,${c.y}%`)
-      .join(" ")}
-    fill="none"
-    stroke="#ffffff"
-    strokeWidth="3"
-    vectorEffect="non-scaling-stroke"
-  />
-</svg>
+      <svg
+        className="absolute inset-0 w-full h-full pointer-events-none"
+        viewBox="0 0 100 100"
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        <defs>
+          <mask id="crop-mask">
+            <rect width="100%" height="100%" fill="white" />
+            <polygon points={points} fill="black" />
+          </mask>
+        </defs>
+        <rect
+          width="100%"
+          height="100%"
+          fill="rgba(0,0,0,0.45)"
+          mask="url(#crop-mask)"
+        />
+        <polygon
+          points={points}
+          fill="none"
+          stroke="#14251c"
+          strokeWidth="1"
+          strokeLinejoin="round"
+        />
+      </svg>
 
+      {/* Corner handles */}
       {corners.map((corner, index) => (
         <button
           key={index}
-          onPointerDown={e => startDrag(index, e)}
-          className="absolute w-7 h-7 rounded-full bg-white border-4 border-[#1b3125] shadow-lg pointer-events-auto cursor-move"
+          onPointerDown={e =>
+            startDrag(index, e)
+          }
+          className="
+            absolute
+            w-9
+            h-9
+            rounded-full
+            bg-white
+            border-[4px]
+            border-[#1b3125]
+            shadow-xl
+            pointer-events-auto
+            cursor-crosshair
+            touch-none
+          "
           style={{
             left: `${corner.x}%`,
             top: `${corner.y}%`,
-            transform: "translate(-50%, -50%)"
+            transform:
+              "translate(-50%, -50%)"
           }}
-          title="Drag corner"
+          aria-label={`Crop corner ${index + 1}`}
         />
       ))}
+
     </div>
   )
 }
 
+
+/* =========================================================
+   MAIN SMART SCAN
+   ========================================================= */
+
 export default function SmartScan() {
+
   const fileInputRef = useRef(null)
+
   const cameraInputRef = useRef(null)
 
-  const [selectedFile, setSelectedFile] = useState(null)
-  const [originalImage, setOriginalImage] = useState(null)
+  const [selectedFile, setSelectedFile] =
+    useState(null)
 
-  const [preview, setPreview] = useState(null)
-  const [processedPreview, setProcessedPreview] = useState(null)
+  const [originalImage, setOriginalImage] =
+    useState(null)
+
+  const [baseImage, setBaseImage] =
+    useState(null)
+
+  const [preview, setPreview] =
+    useState(null)
+
+  const [processedPreview, setProcessedPreview] =
+    useState(null)
 
   const [corners, setCorners] = useState([
     { x: 8, y: 8 },
@@ -157,31 +245,55 @@ export default function SmartScan() {
     { x: 8, y: 92 }
   ])
 
-  const [autoDetect, setAutoDetect] = useState(true)
-  const [perspectiveFix, setPerspectiveFix] = useState(true)
-  const [removeShadows, setRemoveShadows] = useState(false)
+  const [autoDetect, setAutoDetect] =
+    useState(true)
 
-  const [filter, setFilter] = useState("original")
+  const [perspectiveFix, setPerspectiveFix] =
+    useState(true)
 
-  const [format, setFormat] = useState("PDF")
-  const [sizeMode, setSizeMode] = useState("standard")
+  const [removeShadows, setRemoveShadows] =
+    useState(false)
 
-  const [customSize, setCustomSize] = useState(2)
+  const [filter, setFilter] =
+    useState("original")
 
-  const [filename, setFilename] = useState("FileFlow_Scan")
+  const [format, setFormat] =
+    useState("PDF")
 
-  const [rotation, setRotation] = useState(0)
+  const [sizeMode, setSizeMode] =
+    useState("standard")
 
-  const [pages, setPages] = useState([])
-  const [currentPage, setCurrentPage] = useState(0)
+  const [customSize, setCustomSize] =
+    useState(2)
 
-  const [showCrop, setShowCrop] = useState(false)
-  const [status, setStatus] = useState("")
-  const [processing, setProcessing] = useState(false)
+  const [filename, setFilename] =
+    useState("FileFlow_Scan")
 
-  const [cameraOpen, setCameraOpen] = useState(false)
+  const [rotation, setRotation] =
+    useState(0)
+
+  const [pages, setPages] =
+    useState([])
+
+  const [currentPage, setCurrentPage] =
+    useState(0)
+
+  const [showCrop, setShowCrop] =
+    useState(false)
+
+  const [status, setStatus] =
+    useState("")
+
+  const [processing, setProcessing] =
+    useState(false)
+
+  const [cameraOpen, setCameraOpen] =
+    useState(false)
+
   const videoRef = useRef(null)
+
   const streamRef = useRef(null)
+
 
   const filters = [
     {
@@ -221,6 +333,7 @@ export default function SmartScan() {
     }
   ]
 
+
   const sizeOptions = [
     {
       id: "standard",
@@ -242,45 +355,87 @@ export default function SmartScan() {
     }
   ]
 
+
+  /* =========================================================
+     HANDLE FILE
+     ========================================================= */
+
   async function handleFile(file) {
+
     if (!file) return
 
     if (!file.type.startsWith("image/")) {
-      setStatus("For Smart Scan, please select an image.")
+      setStatus(
+        "For Smart Scan, please select an image."
+      )
       return
     }
 
     setSelectedFile(file)
 
-    const url = URL.createObjectURL(file)
+    const url =
+      URL.createObjectURL(file)
 
     try {
-      const img = await loadImage(url)
+
+      const img =
+        await loadImage(url)
 
       setOriginalImage(img)
+
+      setBaseImage(url)
+
       setPreview(url)
+
       setProcessedPreview(url)
 
       setPages([url])
+
       setCurrentPage(0)
+
+      setRotation(0)
 
       setStatus("✓ Ready to scan")
 
+
+      const defaultCorners = [
+        { x: 8, y: 8 },
+        { x: 92, y: 8 },
+        { x: 92, y: 92 },
+        { x: 8, y: 92 }
+      ]
+
+      setCorners(defaultCorners)
+
+
       if (autoDetect) {
-        const detected = await detectDocumentCorners(img)
+
+        const detected =
+          await detectDocumentCorners(img)
 
         if (detected) {
+
           setCorners(detected)
-          setStatus("✓ Document edges detected")
+
+          setStatus(
+            "✓ Document edges detected"
+          )
         }
       }
+
     } catch {
-      setStatus("Unable to read this image.")
+
+      setStatus(
+        "Unable to read this image."
+      )
     }
   }
 
+
   function handleFileChange(e) {
-    const file = e.target.files?.[0]
+
+    const file =
+      e.target.files?.[0]
 
     if (file) {
       handleFile(file)
@@ -289,113 +444,187 @@ export default function SmartScan() {
     e.target.value = ""
   }
 
+
+  /* =========================================================
+     CAMERA
+     ========================================================= */
+
   async function openCamera() {
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: "environment"
-        }
-      })
+
+      const stream =
+        await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: "environment"
+          }
+        })
 
       streamRef.current = stream
 
       setCameraOpen(true)
 
       setTimeout(() => {
+
         if (videoRef.current) {
-          videoRef.current.srcObject = stream
+          videoRef.current.srcObject =
+            stream
         }
+
       }, 100)
+
     } catch {
-      setStatus("Camera permission was denied or unavailable.")
+
+      setStatus(
+        "Camera permission was denied or unavailable."
+      )
     }
   }
 
+
   function closeCamera() {
+
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop())
+
+      streamRef.current
+        .getTracks()
+        .forEach(track =>
+          track.stop()
+        )
+
       streamRef.current = null
     }
 
     setCameraOpen(false)
   }
 
+
   async function captureCamera() {
-    const video = videoRef.current
+
+    const video =
+      videoRef.current
 
     if (!video) return
 
-    const canvas = document.createElement("canvas")
+    const canvas =
+      document.createElement("canvas")
 
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
+    canvas.width =
+      video.videoWidth
 
-    const ctx = canvas.getContext("2d")
-    ctx.drawImage(video, 0, 0)
+    canvas.height =
+      video.videoHeight
 
-    canvas.toBlob(async blob => {
-      if (!blob) return
+    const ctx =
+      canvas.getContext("2d")
 
-      const file = new File(
-        [blob],
-        `Camera_Scan_${Date.now()}.jpg`,
-        {
-          type: "image/jpeg"
-        }
-      )
+    ctx.drawImage(
+      video,
+      0,
+      0
+    )
 
-      closeCamera()
+    canvas.toBlob(
+      async blob => {
 
-      await handleFile(file)
-    }, "image/jpeg", 0.95)
+        if (!blob) return
+
+        const file =
+          new File(
+            [blob],
+            `Camera_Scan_${Date.now()}.jpg`,
+            {
+              type: "image/jpeg"
+            }
+          )
+
+        closeCamera()
+
+        await handleFile(file)
+
+      },
+      "image/jpeg",
+      0.95
+    )
   }
+
+
+  /* =========================================================
+     LIVE PREVIEW
+     ========================================================= */
 
   async function applyLivePreview() {
-  if (!originalImage) return
 
-  setProcessing(true)
+    if (!baseImage) return
 
-  try {
-    let working = originalImage
+    setProcessing(true)
 
-    const corrected = await perspectiveCorrect(
-      working,
-      corners
-    )
+    try {
 
-    if (corrected) {
-      working = corrected
+      let working =
+        await loadImage(baseImage)
+
+
+      if (perspectiveFix) {
+
+        const corrected =
+          await perspectiveCorrect(
+            working,
+            corners
+          )
+
+        if (corrected) {
+          working = corrected
+        }
+      }
+
+
+      const filtered =
+        await applyFilters(
+          working,
+          filter,
+          removeShadows
+        )
+
+
+      const rotated =
+        rotateImage(
+          filtered,
+          rotation
+        )
+
+
+      setProcessedPreview(rotated)
+
+      setStatus(
+        "✓ Preview updated"
+      )
+
+    } catch (error) {
+
+      console.error(error)
+
+      setStatus(
+        "Preview could not be updated."
+      )
     }
 
-    const filtered = await applyFilters(
-      working,
-      filter,
-      removeShadows
-    )
-
-    const rotated = rotateImage(
-      filtered,
-      rotation
-    )
-
-    setProcessedPreview(rotated)
-    setStatus("✓ Preview updated")
-  } catch (error) {
-    console.error(error)
-    setStatus("Preview could not be updated.")
+    setProcessing(false)
   }
 
-  setProcessing(false)
-}
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      applyLivePreview()
-    }, 150)
 
-    return () => clearTimeout(timer)
+    const timer =
+      setTimeout(() => {
+        applyLivePreview()
+      }, 150)
+
+    return () =>
+      clearTimeout(timer)
+
   }, [
-    originalImage,
+    baseImage,
     corners,
     perspectiveFix,
     filter,
@@ -403,66 +632,106 @@ export default function SmartScan() {
     rotation
   ])
 
+
+  /* =========================================================
+     SCAN DOCUMENT
+     ========================================================= */
+
   async function scanDocument() {
-    if (!originalImage) return
+
+    if (!baseImage) return
 
     setProcessing(true)
-    setStatus("Processing document...")
+
+    setStatus(
+      "Processing document..."
+    )
 
     try {
-      let working = originalImage
+
+      let working =
+        await loadImage(baseImage)
+
 
       if (autoDetect) {
-        const detected = await detectDocumentCorners(working)
+
+        const detected =
+          await detectDocumentCorners(
+            working
+          )
 
         if (detected) {
+
           setCorners(detected)
 
           if (perspectiveFix) {
-            const corrected = await perspectiveCorrect(
-              working,
-              detected
-            )
+
+            const corrected =
+              await perspectiveCorrect(
+                working,
+                detected
+              )
 
             if (corrected) {
               working = corrected
             }
           }
         }
+
       } else if (perspectiveFix) {
-        const corrected = await perspectiveCorrect(
-          working,
-          corners
-        )
+
+        const corrected =
+          await perspectiveCorrect(
+            working,
+            corners
+          )
 
         if (corrected) {
           working = corrected
         }
       }
 
-      const filtered = await applyFilters(
-        working,
-        filter,
-        removeShadows
-      )
 
-      const rotated = rotateImage(
-        filtered,
-        rotation
-      )
+      const filtered =
+        await applyFilters(
+          working,
+          filter,
+          removeShadows
+        )
+
+
+      const rotated =
+        rotateImage(
+          filtered,
+          rotation
+        )
+
 
       setProcessedPreview(rotated)
 
-      setStatus("✓ Scan processed")
+      setStatus(
+        "✓ Scan processed"
+      )
+
     } catch (error) {
+
       console.error(error)
-      setStatus("Could not process document.")
+
+      setStatus(
+        "Could not process document."
+      )
     }
 
     setProcessing(false)
   }
 
+
+  /* =========================================================
+     RESET CROP
+     ========================================================= */
+
   function resetCorners() {
+
     setCorners([
       { x: 8, y: 8 },
       { x: 92, y: 8 },
@@ -470,30 +739,181 @@ export default function SmartScan() {
       { x: 8, y: 92 }
     ])
 
-    setStatus("Manual crop box reset")
+    setStatus(
+      "Crop box reset"
+    )
   }
+
+
+    /* =========================================================
+      APPLY FOUR-SIDED CROP
+      ========================================================= */
+
+  async function applyCrop() {
+
+    if (!baseImage) return
+
+    setProcessing(true)
+
+    setStatus(
+      "Cropping image..."
+    )
+
+    try {
+
+      const img =
+        await loadImage(baseImage)
+
+
+      const pixelCorners = corners.map(corner => ({
+        x: img.naturalWidth * corner.x / 100,
+        y: img.naturalHeight * corner.y / 100
+      }))
+
+      const sx = Math.floor(Math.min(...pixelCorners.map(corner => corner.x)))
+      const sy = Math.floor(Math.min(...pixelCorners.map(corner => corner.y)))
+      const ex = Math.ceil(Math.max(...pixelCorners.map(corner => corner.x)))
+      const ey = Math.ceil(Math.max(...pixelCorners.map(corner => corner.y)))
+      const sw = ex - sx
+      const sh = ey - sy
+
+
+      if (sw <= 0 || sh <= 0) {
+
+        setStatus(
+          "Invalid crop area."
+        )
+
+        setProcessing(false)
+
+        return
+      }
+
+
+      const canvas =
+        document.createElement("canvas")
+
+      canvas.width = sw
+
+      canvas.height = sh
+
+
+      const ctx =
+        canvas.getContext("2d")
+
+
+      ctx.beginPath()
+      pixelCorners.forEach((corner, index) => {
+        const x = corner.x - sx
+        const y = corner.y - sy
+
+        if (index === 0) ctx.moveTo(x, y)
+        else ctx.lineTo(x, y)
+      })
+      ctx.closePath()
+      ctx.clip()
+      ctx.drawImage(img, -sx, -sy)
+
+
+      const cropped = canvas.toDataURL("image/png")
+
+
+      /*
+       * The cropped image becomes the new
+       * working source.
+       */
+      setBaseImage(cropped)
+
+      setPreview(cropped)
+
+      setProcessedPreview(cropped)
+
+
+      setCorners([
+        { x: 2, y: 2 },
+        { x: 98, y: 2 },
+        { x: 98, y: 98 },
+        { x: 2, y: 98 }
+      ])
+
+
+      setShowCrop(false)
+
+      setStatus(
+        "✓ Crop applied"
+      )
+
+    } catch (error) {
+
+      console.error(error)
+
+      setStatus(
+        "Crop failed."
+      )
+    }
+
+    setProcessing(false)
+  }
+
+
+  /* =========================================================
+     ROTATION
+     ========================================================= */
 
   function rotateLeft() {
-    setRotation(prev => (prev - 90 + 360) % 360)
+
+    setRotation(
+      prev =>
+        (prev - 90 + 360) % 360
+    )
   }
+
 
   function rotateRight() {
-    setRotation(prev => (prev + 90) % 360)
+
+    setRotation(
+      prev =>
+        (prev + 90) % 360
+    )
   }
 
+
+  /* =========================================================
+     ADD PAGE
+     ========================================================= */
+
   async function addPage() {
+
     fileInputRef.current?.click()
   }
 
+
   async function addPageFromFile(e) {
-    const file = e.target.files?.[0]
+
+    const file =
+      e.target.files?.[0]
 
     if (!file) return
 
-    const url = URL.createObjectURL(file)
+    if (!file.type.startsWith("image/")) {
+
+      setStatus(
+        "Please select an image."
+      )
+
+      return
+    }
+
+
+    const url =
+      URL.createObjectURL(file)
+
 
     try {
-      const img = await loadImage(url)
+
+      const img =
+        await loadImage(url)
+
 
       let detectedCorners = [
         { x: 8, y: 8 },
@@ -502,351 +922,467 @@ export default function SmartScan() {
         { x: 8, y: 92 }
       ]
 
+
       if (autoDetect) {
-        const detected = await detectDocumentCorners(img)
+
+        const detected =
+          await detectDocumentCorners(
+            img
+          )
 
         if (detected) {
-          detectedCorners = detected
+          detectedCorners =
+            detected
         }
       }
 
-      const corrected = perspectiveFix
-        ? await perspectiveCorrect(img, detectedCorners)
-        : img
 
-      const filtered = await applyFilters(
-        corrected || img,
-        filter,
-        removeShadows
+      let working = img
+
+
+      if (perspectiveFix) {
+
+        const corrected =
+          await perspectiveCorrect(
+            working,
+            detectedCorners
+          )
+
+        if (corrected) {
+          working = corrected
+        }
+      }
+
+
+      const filtered =
+        await applyFilters(
+          working,
+          filter,
+          removeShadows
+        )
+
+
+      const rotated =
+        rotateImage(
+          filtered,
+          0
+        )
+
+
+      setPages(prev => [
+        ...prev,
+        rotated
+      ])
+
+
+      setCurrentPage(
+        pages.length
       )
 
-      const rotated = rotateImage(
-        filtered,
-        0
+
+      setStatus(
+        `✓ Page ${pages.length + 1} added`
       )
 
-      setPages(prev => [...prev, rotated])
-      setCurrentPage(pages.length)
-
-      setStatus(`✓ Page ${pages.length + 1} added`)
     } catch {
-      setStatus("Could not add page.")
+
+      setStatus(
+        "Could not add page."
+      )
     }
 
     e.target.value = ""
   }
 
+
+  /* =========================================================
+     PAGE MANAGEMENT
+     ========================================================= */
+
   function deletePage(index) {
+
     if (pages.length <= 1) {
-      setStatus("At least one page is required.")
+
+      setStatus(
+        "At least one page is required."
+      )
+
       return
     }
 
-    const updated = pages.filter((_, i) => i !== index)
+
+    const updated =
+      pages.filter(
+        (_, i) =>
+          i !== index
+      )
+
+
+    setPages(updated)
+
+
+    setCurrentPage(
+      Math.min(
+        currentPage,
+        updated.length - 1
+      )
+    )
+  }
+
+
+  function movePageLeft(index) {
+
+    if (index === 0) return
+
+    const updated =
+      [...pages]
+
+
+    const temp =
+      updated[index - 1]
+
+    updated[index - 1] =
+      updated[index]
+
+    updated[index] =
+      temp
+
 
     setPages(updated)
 
     setCurrentPage(
-      Math.min(currentPage, updated.length - 1)
+      index - 1
     )
   }
 
-  function movePageLeft(index) {
-    if (index === 0) return
-
-    const updated = [...pages]
-
-    const temp = updated[index - 1]
-    updated[index - 1] = updated[index]
-    updated[index] = temp
-
-    setPages(updated)
-    setCurrentPage(index - 1)
-  }
 
   function movePageRight(index) {
-    if (index === pages.length - 1) return
 
-    const updated = [...pages]
+    if (
+      index ===
+      pages.length - 1
+    ) {
+      return
+    }
 
-    const temp = updated[index + 1]
-    updated[index + 1] = updated[index]
-    updated[index] = temp
+
+    const updated =
+      [...pages]
+
+
+    const temp =
+      updated[index + 1]
+
+    updated[index + 1] =
+      updated[index]
+
+    updated[index] =
+      temp
+
 
     setPages(updated)
-    setCurrentPage(index + 1)
+
+    setCurrentPage(
+      index + 1
+    )
   }
 
-  async function createExportBlob() {
-  if (!processedPreview) return null
 
-  const img = await loadImage(processedPreview)
+  /* =========================================================
+     EXPORT
+     ========================================================= */
 
-  let quality = 0.9
+  async function exportFile() {
 
-  if (sizeMode === "small") {
-    quality = 0.6
-  }
+    if (!processedPreview) {
 
-  if (sizeMode === "standard") {
-    quality = 0.85
-  }
-
-  if (sizeMode === "custom") {
-    const targetBytes = Number(customSize) * 1024 * 1024
-
-    let low = 0.1
-    let high = 1
-    let bestBlob = null
-
-    for (let i = 0; i < 8; i++) {
-      const testQuality = (low + high) / 2
-
-      const data = imageToDataURL(
-        img,
-        "image/jpeg",
-        testQuality
+      setStatus(
+        "Select an image before exporting."
       )
 
-      const blob = dataURLToBlob(data)
+      return
+    }
 
-      if (blob.size <= targetBytes) {
-        bestBlob = blob
-        low = testQuality
-      } else {
-        high = testQuality
+
+    setProcessing(true)
+
+    setStatus(
+      "Preparing export..."
+    )
+
+
+    try {
+
+      let cleanName =
+        filename.trim()
+
+
+      if (!cleanName) {
+        cleanName =
+          "FileFlow_Scan"
       }
-    }
 
-    if (bestBlob) {
-      return bestBlob
-    }
 
-    const data = imageToDataURL(
-      img,
-      "image/jpeg",
-      0.1
-    )
-
-    return dataURLToBlob(data)
-  }
-
-  if (format === "PNG") {
-    const canvas = document.createElement("canvas")
-
-    canvas.width = img.naturalWidth
-    canvas.height = img.naturalHeight
-
-    const ctx = canvas.getContext("2d")
-
-    ctx.drawImage(img, 0, 0)
-
-    return new Promise(resolve => {
-      canvas.toBlob(
-        blob => resolve(blob),
-        "image/png"
-      )
-    })
-  }
-
-  const data = imageToDataURL(
-    img,
-    "image/jpeg",
-    quality
-  )
-
-  return dataURLToBlob(data)
-}
-
- async function exportFile() {
-  if (!originalImage) {
-    setStatus("Select an image before exporting.")
-    return
-  }
-
-  setProcessing(true)
-  setStatus("Preparing export...")
-
-  try {
-    let cleanName = filename.trim()
-
-    if (!cleanName) {
-      cleanName = "FileFlow_Scan"
-    }
-
-    cleanName = cleanName.replace(
-      /\.(pdf|jpg|jpeg|png)$/i,
-      ""
-    )
-
-    // 1. Apply the crop/perspective using the dragger corners
-    let exportImage = await perspectiveCorrect(
-      originalImage,
-      corners
-    )
-
-    if (!exportImage) {
-      exportImage = originalImage
-    }
-
-    // 2. Apply selected filter
-    exportImage = await applyFilters(
-      exportImage,
-      filter,
-      removeShadows
-    )
-
-    // 3. Apply rotation
-    exportImage = rotateImage(
-      exportImage,
-      rotation
-    )
-
-    // 4. Load final processed image
-    const img = await loadImage(exportImage)
-
-    // =========================
-    // PDF EXPORT
-    // =========================
-    if (format === "PDF") {
-      const imageData = imageToDataURL(
-        img,
-        "image/jpeg",
-        sizeMode === "small" ? 0.65 : 0.9
-      )
-
-      const pdfBlob = await imagesToPDF(
-        [imageData],
-        `${cleanName}.pdf`
-      )
-
-      downloadBlob(
-        pdfBlob,
-        `${cleanName}.pdf`
-      )
-    }
-
-    // =========================
-    // PNG EXPORT
-    // =========================
-    else if (format === "PNG") {
-      const canvas = document.createElement("canvas")
-
-      canvas.width = img.naturalWidth
-      canvas.height = img.naturalHeight
-
-      const ctx = canvas.getContext("2d")
-
-      ctx.drawImage(
-        img,
-        0,
-        0,
-        canvas.width,
-        canvas.height
-      )
-
-      const blob = await new Promise(resolve => {
-        canvas.toBlob(
-          resolve,
-          "image/png"
+      cleanName =
+        cleanName.replace(
+          /\.(pdf|jpg|jpeg|png)$/i,
+          ""
         )
-      })
 
-      downloadBlob(
-        blob,
-        `${cleanName}.png`
-      )
-    }
 
-    // =========================
-    // JPG EXPORT
-    // =========================
-    else {
-      let quality = 0.9
+      const exportImage =
+        processedPreview
 
-      if (sizeMode === "small") {
-        quality = 0.6
-      }
 
-      if (sizeMode === "standard") {
-        quality = 0.85
-      }
+      const img =
+        await loadImage(
+          exportImage
+        )
 
-      // Custom target size
-      if (sizeMode === "custom") {
-        const targetBytes =
-          Number(customSize) * 1024 * 1024
 
-        let low = 0.1
-        let high = 1
-        let bestBlob = null
+      /* =========================
+         PDF
+         ========================= */
 
-        for (let i = 0; i < 8; i++) {
-          const testQuality =
-            (low + high) / 2
+      if (format === "PDF") {
 
-          const data = imageToDataURL(
+        let quality = 0.9
+
+        if (sizeMode === "small") {
+          quality = 0.65
+        }
+
+        if (sizeMode === "standard") {
+          quality = 0.85
+        }
+
+        const imageData =
+          imageToDataURL(
             img,
             "image/jpeg",
-            testQuality
+            quality
           )
 
-          const blob = dataURLToBlob(data)
 
-          if (blob.size <= targetBytes) {
-            bestBlob = blob
-            low = testQuality
-          } else {
-            high = testQuality
-          }
-        }
-
-        if (bestBlob) {
-          downloadBlob(
-            bestBlob,
-            `${cleanName}.jpg`
+        const pdfBlob =
+          await imagesToPDF(
+            [imageData],
+            `${cleanName}.pdf`
           )
 
-          setStatus(
-            "✓ File exported successfully"
-          )
 
-          setProcessing(false)
-          return
-        }
-
-        quality = 0.1
+        downloadBlob(
+          pdfBlob,
+          `${cleanName}.pdf`
+        )
       }
 
-      const data = imageToDataURL(
-        img,
-        "image/jpeg",
-        quality
+
+      /* =========================
+         PNG
+         ========================= */
+
+      else if (format === "PNG") {
+
+        const canvas =
+          document.createElement(
+            "canvas"
+          )
+
+
+        canvas.width =
+          img.naturalWidth
+
+        canvas.height =
+          img.naturalHeight
+
+
+        const ctx =
+          canvas.getContext("2d")
+
+
+        ctx.drawImage(
+          img,
+          0,
+          0,
+          canvas.width,
+          canvas.height
+        )
+
+
+        const blob =
+          await new Promise(
+            resolve => {
+
+              canvas.toBlob(
+                resolve,
+                "image/png"
+              )
+            }
+          )
+
+
+        downloadBlob(
+          blob,
+          `${cleanName}.png`
+        )
+      }
+
+
+      /* =========================
+         JPG
+         ========================= */
+
+      else {
+
+        let quality = 0.9
+
+
+        if (
+          sizeMode === "small"
+        ) {
+          quality = 0.6
+        }
+
+
+        if (
+          sizeMode === "standard"
+        ) {
+          quality = 0.85
+        }
+
+
+        if (
+          sizeMode === "custom"
+        ) {
+
+          const targetBytes =
+            Number(customSize) *
+            1024 *
+            1024
+
+
+          let low = 0.1
+
+          let high = 1
+
+          let bestBlob = null
+
+
+          for (
+            let i = 0;
+            i < 8;
+            i++
+          ) {
+
+            const testQuality =
+              (low + high) / 2
+
+
+            const data =
+              imageToDataURL(
+                img,
+                "image/jpeg",
+                testQuality
+              )
+
+
+            const blob =
+              dataURLToBlob(data)
+
+
+            if (
+              blob.size <=
+              targetBytes
+            ) {
+
+              bestBlob = blob
+
+              low =
+                testQuality
+
+            } else {
+
+              high =
+                testQuality
+            }
+          }
+
+
+          if (bestBlob) {
+
+            downloadBlob(
+              bestBlob,
+              `${cleanName}.jpg`
+            )
+
+
+            setStatus(
+              "✓ File exported successfully"
+            )
+
+
+            setProcessing(false)
+
+            return
+          }
+
+
+          quality = 0.1
+        }
+
+
+        const data =
+          imageToDataURL(
+            img,
+            "image/jpeg",
+            quality
+          )
+
+
+        const blob =
+          dataURLToBlob(data)
+
+
+        downloadBlob(
+          blob,
+          `${cleanName}.jpg`
+        )
+      }
+
+
+      setStatus(
+        "✓ File exported successfully"
       )
 
-      const blob = dataURLToBlob(data)
+    } catch (error) {
 
-      downloadBlob(
-        blob,
-        `${cleanName}.jpg`
+      console.error(error)
+
+      setStatus(
+        "Export failed."
       )
     }
 
-    setStatus("✓ File exported successfully")
-  } catch (error) {
-    console.error(error)
-    setStatus("Export failed.")
+
+    setProcessing(false)
   }
 
-  setProcessing(false)
-}
+
+  /* =========================================================
+     UI
+     ========================================================= */
 
   return (
+
     <div className="min-h-screen bg-[#f4fbf9] text-[#1a1f1d]">
 
       <main className="max-w-[1280px] mx-auto px-6 py-8">
 
+        {/* HEADER */}
+
         <div className="mb-7">
+
           <h1 className="text-3xl font-bold text-[#31473a]">
             Smart Scan
           </h1>
@@ -854,7 +1390,9 @@ export default function SmartScan() {
           <p className="mt-2 text-[#424844]">
             Scan, correct, enhance and export documents directly in your browser.
           </p>
+
         </div>
+
 
         {/* FILE SELECTION */}
 
@@ -863,21 +1401,32 @@ export default function SmartScan() {
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
 
             <div>
+
               <h2 className="font-bold text-lg">
-                {selectedFile ? "Selected File" : "Select a document"}
+
+                {selectedFile
+                  ? "Selected File"
+                  : "Select a document"}
+
               </h2>
 
+
               {selectedFile ? (
+
                 <div className="mt-2 flex items-center gap-3">
 
                   {preview && (
+
                     <img
                       src={preview}
                       className="w-16 h-16 object-cover rounded-lg border border-[#c2c8c2]"
                     />
+
                   )}
 
+
                   <div>
+
                     <p className="font-semibold">
                       {selectedFile.name}
                     </p>
@@ -889,15 +1438,21 @@ export default function SmartScan() {
                     <p className="text-sm text-[#1b3125] font-semibold mt-1">
                       {status || "✓ Ready to scan"}
                     </p>
+
                   </div>
 
                 </div>
+
               ) : (
+
                 <p className="text-sm text-[#424844] mt-1">
                   Select an image or capture one with your camera.
                 </p>
+
               )}
+
             </div>
+
 
             <div className="flex gap-3 flex-wrap">
 
@@ -908,8 +1463,11 @@ export default function SmartScan() {
                 📷 Scan with Camera
               </button>
 
+
               <button
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() =>
+                  fileInputRef.current?.click()
+                }
                 className="px-5 py-3 rounded-lg border border-[#737973] font-semibold"
               >
                 Select Image
@@ -919,21 +1477,32 @@ export default function SmartScan() {
 
           </div>
 
+
           <input
             ref={fileInputRef}
             type="file"
             accept="image/*"
             hidden
             onChange={e => {
-              if (e.target.files?.length) {
-                if (!selectedFile) {
-                  handleFile(e.target.files[0])
-                } else {
-                  addPageFromFile(e)
-                }
+
+              if (!e.target.files?.length) {
+                return
               }
+
+              if (!selectedFile) {
+
+                handleFile(
+                  e.target.files[0]
+                )
+
+              } else {
+
+                addPageFromFile(e)
+              }
+
             }}
           />
+
 
           <input
             ref={cameraInputRef}
@@ -945,9 +1514,11 @@ export default function SmartScan() {
 
         </div>
 
+
         {/* MAIN AREA */}
 
         <div className="grid lg:grid-cols-[1fr_340px] gap-6">
+
 
           {/* PREVIEW */}
 
@@ -959,32 +1530,46 @@ export default function SmartScan() {
                 Live Preview
               </h2>
 
+
               <div className="flex gap-2">
 
                 <button
                   onClick={rotateLeft}
-                  disabled={!originalImage}
+                  disabled={!baseImage}
                   className="px-3 py-2 border border-[#737973] rounded-lg"
                 >
                   ↶
                 </button>
 
+
                 <button
                   onClick={rotateRight}
-                  disabled={!originalImage}
+                  disabled={!baseImage}
                   className="px-3 py-2 border border-[#737973] rounded-lg"
                 >
                   ↷
                 </button>
 
+
                 <button
-                  onClick={() => setShowCrop(!showCrop)}
-                  disabled={!originalImage}
-                  className={`px-4 py-2 rounded-lg border font-semibold ${
-                    showCrop
-                      ? "bg-[#1b3125] text-white"
-                      : ""
-                  }`}
+                  onClick={() =>
+                    setShowCrop(
+                      !showCrop
+                    )
+                  }
+                  disabled={!baseImage}
+                  className={`
+                    px-4
+                    py-2
+                    rounded-lg
+                    border
+                    font-semibold
+                    ${
+                      showCrop
+                        ? "bg-[#1b3125] text-white"
+                        : ""
+                    }
+                  `}
                 >
                   Crop
                 </button>
@@ -993,60 +1578,95 @@ export default function SmartScan() {
 
             </div>
 
+
             {!processedPreview ? (
+
               <div className="min-h-[520px] rounded-xl border-2 border-dashed border-[#c2c8c2] flex items-center justify-center text-[#737973]">
+
                 Select or capture a document to begin.
+
               </div>
+
             ) : (
+
               <div className="relative bg-[#e2eae7] rounded-xl p-5 flex justify-center min-h-[520px]">
 
-                <div className="relative max-w-full max-h-[650px]">
+                <div className="relative inline-block max-w-full max-h-[650px]">
 
                   <img
-                    src={processedPreview}
+                    src={
+                      showCrop
+                        ? baseImage
+                        : processedPreview
+                    }
                     className="max-h-[650px] max-w-full object-contain rounded-lg shadow-sm"
                   />
 
+
                   {showCrop && (
-                    <CornerEditor
+
+                    <CropEditor
                       corners={corners}
                       setCorners={setCorners}
                     />
+
                   )}
 
                 </div>
 
               </div>
+
             )}
+
 
             {/* CROP CONTROLS */}
 
-            {showCrop && originalImage && (
+            {showCrop && baseImage && (
+
               <div className="mt-4 p-4 bg-[#f4fbf9] border border-[#c2c8c2] rounded-lg">
 
-                <div className="flex justify-between items-center">
+                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
 
                   <div>
+
                     <p className="font-bold">
-                      Manual document correction
+                      Crop Image
                     </p>
 
                     <p className="text-sm text-[#424844]">
-                      Drag the four corners to fit the document.
+                      Drag the four corners to select any four-sided area to keep.
                     </p>
+
                   </div>
 
-                  <button
-                    onClick={resetCorners}
-                    className="px-4 py-2 border rounded-lg font-semibold"
-                  >
-                    Reset
-                  </button>
+
+                  <div className="flex gap-2">
+
+                    <button
+                      onClick={resetCorners}
+                      disabled={processing}
+                      className="px-4 py-2 border border-[#737973] rounded-lg font-semibold disabled:opacity-50"
+                    >
+                      Reset
+                    </button>
+
+
+                    <button
+                      onClick={applyCrop}
+                      disabled={processing}
+                      className="px-4 py-2 bg-[#1b3125] text-white rounded-lg font-semibold disabled:opacity-50"
+                    >
+                      Apply Crop
+                    </button>
+
+                  </div>
 
                 </div>
 
               </div>
+
             )}
+
 
             {/* PAGES */}
 
@@ -1058,6 +1678,7 @@ export default function SmartScan() {
                   Pages ({pages.length})
                 </h3>
 
+
                 <button
                   onClick={addPage}
                   className="px-4 py-2 bg-[#dce3be] rounded-lg font-semibold"
@@ -1067,58 +1688,86 @@ export default function SmartScan() {
 
               </div>
 
+
               <div className="flex gap-3 overflow-x-auto pb-2">
 
-                {pages.map((page, index) => (
-                  <div
-                    key={index}
-                    className={`relative flex-shrink-0 border-2 rounded-lg p-1 ${
-                      currentPage === index
-                        ? "border-[#1b3125]"
-                        : "border-[#c2c8c2]"
-                    }`}
-                  >
+                {pages.map(
+                  (page, index) => (
 
-                    <button
-                      onClick={() => setCurrentPage(index)}
+                    <div
+                      key={index}
+                      className={`
+                        relative
+                        flex-shrink-0
+                        border-2
+                        rounded-lg
+                        p-1
+                        ${
+                          currentPage === index
+                            ? "border-[#1b3125]"
+                            : "border-[#c2c8c2]"
+                        }
+                      `}
                     >
-                      <img
-                        src={page}
-                        className="w-20 h-24 object-cover rounded"
-                      />
-                    </button>
 
-                    <div className="text-center text-xs font-semibold mt-1">
-                      {index + 1}
+                      <button
+                        onClick={() =>
+                          setCurrentPage(
+                            index
+                          )
+                        }
+                      >
+
+                        <img
+                          src={page}
+                          className="w-20 h-24 object-cover rounded"
+                        />
+
+                      </button>
+
+
+                      <div className="text-center text-xs font-semibold mt-1">
+                        {index + 1}
+                      </div>
+
+
+                      <div className="flex gap-1 mt-1 justify-center">
+
+                        <button
+                          onClick={() =>
+                            movePageLeft(index)
+                          }
+                          className="text-xs px-1 border rounded"
+                        >
+                          ←
+                        </button>
+
+
+                        <button
+                          onClick={() =>
+                            movePageRight(index)
+                          }
+                          className="text-xs px-1 border rounded"
+                        >
+                          →
+                        </button>
+
+
+                        <button
+                          onClick={() =>
+                            deletePage(index)
+                          }
+                          className="text-xs px-1 border rounded"
+                        >
+                          ×
+                        </button>
+
+                      </div>
+
                     </div>
 
-                    <div className="flex gap-1 mt-1 justify-center">
-
-                      <button
-                        onClick={() => movePageLeft(index)}
-                        className="text-xs px-1 border rounded"
-                      >
-                        ←
-                      </button>
-
-                      <button
-                        onClick={() => movePageRight(index)}
-                        className="text-xs px-1 border rounded"
-                      >
-                        →
-                      </button>
-
-                      <button
-                        onClick={() => deletePage(index)}
-                        className="text-xs px-1 border rounded"
-                      >
-                        ×
-                      </button>
-
-                    </div>
-
-                  </div>
-                ))}
+                  )
+                )}
 
               </div>
 
@@ -1126,9 +1775,11 @@ export default function SmartScan() {
 
           </section>
 
+
           {/* SETTINGS */}
 
           <aside className="space-y-5">
+
 
             {/* ENHANCEMENTS */}
 
@@ -1138,9 +1789,11 @@ export default function SmartScan() {
                 Enhancements
               </h2>
 
+
               <label className="flex items-start justify-between gap-4 mb-5">
 
                 <div>
+
                   <p className="font-semibold">
                     Auto-Detect Edges
                   </p>
@@ -1148,20 +1801,28 @@ export default function SmartScan() {
                   <p className="text-xs text-[#424844]">
                     Find document boundaries automatically.
                   </p>
+
                 </div>
+
 
                 <input
                   type="checkbox"
                   checked={autoDetect}
-                  onChange={e => setAutoDetect(e.target.checked)}
+                  onChange={e =>
+                    setAutoDetect(
+                      e.target.checked
+                    )
+                  }
                   className="w-5 h-5"
                 />
 
               </label>
 
+
               <label className="flex items-start justify-between gap-4 mb-5">
 
                 <div>
+
                   <p className="font-semibold">
                     Perspective Fix
                   </p>
@@ -1169,20 +1830,28 @@ export default function SmartScan() {
                   <p className="text-xs text-[#424844]">
                     Straighten tilted documents.
                   </p>
+
                 </div>
+
 
                 <input
                   type="checkbox"
                   checked={perspectiveFix}
-                  onChange={e => setPerspectiveFix(e.target.checked)}
+                  onChange={e =>
+                    setPerspectiveFix(
+                      e.target.checked
+                    )
+                  }
                   className="w-5 h-5"
                 />
 
               </label>
 
+
               <label className="flex items-start justify-between gap-4">
 
                 <div>
+
                   <p className="font-semibold">
                     Remove Shadows
                   </p>
@@ -1190,18 +1859,25 @@ export default function SmartScan() {
                   <p className="text-xs text-[#424844]">
                     Reduce dark background areas.
                   </p>
+
                 </div>
+
 
                 <input
                   type="checkbox"
                   checked={removeShadows}
-                  onChange={e => setRemoveShadows(e.target.checked)}
+                  onChange={e =>
+                    setRemoveShadows(
+                      e.target.checked
+                    )
+                  }
                   className="w-5 h-5"
                 />
 
               </label>
 
             </div>
+
 
             {/* FILTERS */}
 
@@ -1211,39 +1887,60 @@ export default function SmartScan() {
                 Filters
               </h2>
 
+
               <div className="grid grid-cols-2 gap-2">
 
-                {filters.map(item => (
-                  <button
-                    key={item.id}
-                    onClick={() => setFilter(item.id)}
-                    className={`p-3 rounded-lg border text-left ${
-                      filter === item.id
-                        ? "bg-[#1b3125] text-white border-[#1b3125]"
-                        : "border-[#737973]"
-                    }`}
-                  >
+                {filters.map(
+                  item => (
 
-                    <p className="font-semibold text-sm">
-                      {item.name}
-                    </p>
-
-                    <p
-                      className={`text-xs mt-1 ${
-                        filter === item.id
-                          ? "text-white/80"
-                          : "text-[#737973]"
-                      }`}
+                    <button
+                      key={item.id}
+                      onClick={() =>
+                        setFilter(
+                          item.id
+                        )
+                      }
+                      className={`
+                        p-3
+                        rounded-lg
+                        border
+                        text-left
+                        ${
+                          filter === item.id
+                            ? "bg-[#1b3125] text-white border-[#1b3125]"
+                            : "border-[#737973]"
+                        }
+                      `}
                     >
-                      {item.description}
-                    </p>
 
-                  </button>
-                ))}
+                      <p className="font-semibold text-sm">
+                        {item.name}
+                      </p>
+
+
+                      <p
+                        className={`
+                          text-xs
+                          mt-1
+                          ${
+                            filter === item.id
+                              ? "text-white/80"
+                              : "text-[#737973]"
+                          }
+                        `}
+                      >
+                        {item.description}
+                      </p>
+
+                    </button>
+
+                  )
+                )}
 
               </div>
 
             </div>
+
 
             {/* OUTPUT */}
 
@@ -1253,80 +1950,122 @@ export default function SmartScan() {
                 Output Settings
               </h2>
 
+
               <p className="font-semibold text-sm mb-2">
                 Format
               </p>
 
+
               <div className="grid grid-cols-3 gap-2 mb-5">
 
-                {["PDF", "JPG", "PNG"].map(item => (
+                {[
+                  "PDF",
+                  "JPG",
+                  "PNG"
+                ].map(item => (
+
                   <button
                     key={item}
-                    onClick={() => setFormat(item)}
-                    className={`py-3 rounded-lg border font-semibold ${
-                      format === item
-                        ? "bg-[#1b3125] text-white"
-                        : "border-[#737973]"
-                    }`}
+                    onClick={() =>
+                      setFormat(item)
+                    }
+                    className={`
+                      py-3
+                      rounded-lg
+                      border
+                      font-semibold
+                      ${
+                        format === item
+                          ? "bg-[#1b3125] text-white"
+                          : "border-[#737973]"
+                      }
+                    `}
                   >
                     {item}
                   </button>
+
                 ))}
 
               </div>
+
 
               <p className="font-semibold text-sm mb-2">
                 Recommended Size
               </p>
 
+
               <div className="space-y-2">
 
-                {sizeOptions.map(option => (
-                  <button
-                    key={option.id}
-                    onClick={() => setSizeMode(option.id)}
-                    className={`w-full text-left p-3 rounded-lg border ${
-                      sizeMode === option.id
-                        ? "border-[#1b3125] bg-[#dce3be]"
-                        : "border-[#737973]"
-                    }`}
-                  >
+                {sizeOptions.map(
+                  option => (
 
-                    <div className="flex justify-between">
+                    <button
+                      key={option.id}
+                      onClick={() =>
+                        setSizeMode(
+                          option.id
+                        )
+                      }
+                      className={`
+                        w-full
+                        text-left
+                        p-3
+                        rounded-lg
+                        border
+                        ${
+                          sizeMode === option.id
+                            ? "border-[#1b3125] bg-[#dce3be]"
+                            : "border-[#737973]"
+                        }
+                      `}
+                    >
 
-                      <div>
-                        <p className="font-bold">
-                          {option.title}
-                        </p>
+                      <div className="flex justify-between">
 
-                        <p className="text-xs">
-                          {option.subtitle}
-                        </p>
+                        <div>
+
+                          <p className="font-bold">
+                            {option.title}
+                          </p>
+
+                          <p className="text-xs">
+                            {option.subtitle}
+                          </p>
+
+                        </div>
+
+
+                        {sizeMode === option.id && (
+                          <span>
+                            ✓
+                          </span>
+                        )}
+
                       </div>
 
-                      {sizeMode === option.id && (
-                        <span>✓</span>
-                      )}
 
-                    </div>
+                      <p className="text-xs mt-1 text-[#424844]">
+                        {option.detail}
+                      </p>
 
-                    <p className="text-xs mt-1 text-[#424844]">
-                      {option.detail}
-                    </p>
+                    </button>
 
-                  </button>
-                ))}
+                  )
+                )}
 
               </div>
+
 
               {/* CUSTOM SIZE */}
 
               {sizeMode === "custom" && (
+
                 <div className="mt-4">
 
                   <label className="font-semibold text-sm">
                     Target file size
                   </label>
+
 
                   <div className="flex gap-2 mt-2">
 
@@ -1337,10 +2076,13 @@ export default function SmartScan() {
                       step="0.1"
                       value={customSize}
                       onChange={e =>
-                        setCustomSize(e.target.value)
+                        setCustomSize(
+                          e.target.value
+                        )
                       }
                       className="w-full px-3 py-2 rounded-lg border border-[#737973] bg-white"
                     />
+
 
                     <span className="flex items-center">
                       MB
@@ -1349,7 +2091,9 @@ export default function SmartScan() {
                   </div>
 
                 </div>
+
               )}
+
 
               {/* FILENAME */}
 
@@ -1359,14 +2103,18 @@ export default function SmartScan() {
                   File name
                 </label>
 
+
                 <input
                   value={filename}
                   onChange={e =>
-                    setFilename(e.target.value)
+                    setFilename(
+                      e.target.value
+                    )
                   }
                   placeholder="My_Scanned_Document"
                   className="w-full mt-2 px-3 py-3 rounded-lg border border-[#737973] bg-white"
                 />
+
 
                 <p className="text-xs text-[#737973] mt-1">
                   .{format.toLowerCase()} will be added automatically.
@@ -1374,25 +2122,36 @@ export default function SmartScan() {
 
               </div>
 
+
               {/* ACTIONS */}
 
               <button
                 onClick={scanDocument}
-                disabled={!originalImage || processing}
+                disabled={
+                  !baseImage ||
+                  processing
+                }
                 className="w-full mt-5 py-3 rounded-lg bg-[#1b3125] text-white font-bold disabled:opacity-50"
               >
+
                 {processing
                   ? "Processing..."
                   : "Scan Document →"}
+
               </button>
+
 
               <button
                 onClick={exportFile}
-                disabled={!processedPreview || processing}
+                disabled={
+                  !processedPreview ||
+                  processing
+                }
                 className="w-full mt-3 py-3 rounded-lg border border-[#1b3125] font-bold disabled:opacity-50"
               >
                 Scan & Export
               </button>
+
 
               <p className="text-xs text-center text-[#737973] mt-3">
                 Your files are processed locally in your browser.
@@ -1406,9 +2165,11 @@ export default function SmartScan() {
 
       </main>
 
+
       {/* CAMERA MODAL */}
 
       {cameraOpen && (
+
         <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-5">
 
           <div className="bg-[#f4fbf9] rounded-xl p-5 max-w-2xl w-full">
@@ -1419,6 +2180,7 @@ export default function SmartScan() {
                 Scan with Camera
               </h2>
 
+
               <button
                 onClick={closeCamera}
                 className="text-xl"
@@ -1428,12 +2190,14 @@ export default function SmartScan() {
 
             </div>
 
+
             <video
               ref={videoRef}
               autoPlay
               playsInline
               className="w-full rounded-lg bg-black"
             />
+
 
             <button
               onClick={captureCamera}
@@ -1445,6 +2209,7 @@ export default function SmartScan() {
           </div>
 
         </div>
+
       )}
 
     </div>

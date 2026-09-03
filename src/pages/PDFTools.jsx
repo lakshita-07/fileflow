@@ -4,7 +4,7 @@ import {
   mergePDFs,
   extractPDFPages,
   rotatePDF
-} from "../utils/pdfExport"
+} from "pdfExport"
 
 export default function PDFTools() {
   const [files, setFiles] =

@@ -382,201 +382,76 @@ export async function applyFilters(
   const src = cvLib.imread(canvas)
 
   const dst = new cvLib.Mat()
+  const gray = new cvLib.Mat()
+  const source = new cvLib.Mat()
 
-  if (filter === "original") {
-    cvLib.cvtColor(
-      src,
-      dst,
-      cvLib.COLOR_RGBA2RGB
+  cvLib.cvtColor(src, gray, cvLib.COLOR_RGBA2GRAY)
+
+  if (removeShadows) {
+    const background = new cvLib.Mat()
+    const safeBackground = new cvLib.Mat()
+    const kernel = cvLib.getStructuringElement(
+      cvLib.MORPH_ELLIPSE,
+      new cvLib.Size(31, 31)
     )
+
+    cvLib.morphologyEx(gray, background, cvLib.MORPH_OPEN, kernel)
+    cvLib.add(background, new cvLib.Scalar(1), safeBackground)
+    cvLib.divide(gray, safeBackground, source, 255)
+
+    background.delete()
+    safeBackground.delete()
+    kernel.delete()
+  } else {
+    gray.copyTo(source)
   }
 
-  else if (
-    filter === "gray"
-  ) {
-    cvLib.cvtColor(
-      src,
-      dst,
-      cvLib.COLOR_RGBA2GRAY
-    )
-  }
-
-  else if (
-    filter === "bw"
-  ) {
-    const gray =
-      new cvLib.Mat()
-
-    cvLib.cvtColor(
-      src,
-      gray,
-      cvLib.COLOR_RGBA2GRAY
-    )
-
-    cvLib.threshold(
-      gray,
-      dst,
-      0,
-      255,
-      cvLib.THRESH_BINARY +
-        cvLib.THRESH_OTSU
-    )
-
-    gray.delete()
-  }
-
-  else if (
-    filter === "contrast"
-  ) {
-    const gray =
-      new cvLib.Mat()
-
-    cvLib.cvtColor(
-      src,
-      gray,
-      cvLib.COLOR_RGBA2GRAY
-    )
-
-    cvLib.equalizeHist(
-      gray,
-      dst
-    )
-
-    gray.delete()
-  }
-
-  else if (
-    filter === "document"
-  ) {
-    const gray =
-      new cvLib.Mat()
-
-    cvLib.cvtColor(
-      src,
-      gray,
-      cvLib.COLOR_RGBA2GRAY
-    )
-
-    const adaptive =
-      new cvLib.Mat()
-
+  if (filter === "original" && !removeShadows) {
+    src.copyTo(dst)
+  } else if (filter === "original" || filter === "gray") {
+    cvLib.cvtColor(source, dst, cvLib.COLOR_GRAY2RGBA)
+  } else if (filter === "bw") {
+    const smoothed = new cvLib.Mat()
+    const binary = new cvLib.Mat()
+    cvLib.GaussianBlur(source, smoothed, new cvLib.Size(3, 3), 0)
+    cvLib.threshold(smoothed, binary, 0, 255, cvLib.THRESH_BINARY + cvLib.THRESH_OTSU)
+    cvLib.cvtColor(binary, dst, cvLib.COLOR_GRAY2RGBA)
+    smoothed.delete()
+    binary.delete()
+  } else if (filter === "contrast") {
+    const enhanced = new cvLib.Mat()
+    cvLib.equalizeHist(source, enhanced)
+    cvLib.convertScaleAbs(enhanced, enhanced, 1.12, 0)
+    cvLib.cvtColor(enhanced, dst, cvLib.COLOR_GRAY2RGBA)
+    enhanced.delete()
+  } else if (filter === "document") {
+    const smoothed = new cvLib.Mat()
+    const binary = new cvLib.Mat()
+    cvLib.GaussianBlur(source, smoothed, new cvLib.Size(3, 3), 0)
     cvLib.adaptiveThreshold(
-      gray,
-      adaptive,
+      smoothed,
+      binary,
       255,
       cvLib.ADAPTIVE_THRESH_GAUSSIAN_C,
       cvLib.THRESH_BINARY,
-      21,
-      10
+      31,
+      7
     )
-
-    cvLib.cvtColor(
-      adaptive,
-      dst,
-      cvLib.COLOR_GRAY2RGBA
-    )
-
-    gray.delete()
-    adaptive.delete()
-  }
-
-  else if (
-    filter === "soft"
-  ) {
-    cvLib.GaussianBlur(
-      src,
-      dst,
-      new cvLib.Size(3, 3),
-      0
-    )
-  }
-
-  else if (
-    filter === "auto"
-  ) {
-    const gray =
-      new cvLib.Mat()
-
-    cvLib.cvtColor(
-      src,
-      gray,
-      cvLib.COLOR_RGBA2GRAY
-    )
-
-    const enhanced =
-      new cvLib.Mat()
-
-    cvLib.equalizeHist(
-      gray,
-      enhanced
-    )
-
-    cvLib.cvtColor(
-      enhanced,
-      dst,
-      cvLib.COLOR_GRAY2RGBA
-    )
-
-    gray.delete()
+    cvLib.cvtColor(binary, dst, cvLib.COLOR_GRAY2RGBA)
+    smoothed.delete()
+    binary.delete()
+  } else if (filter === "soft") {
+    const softened = new cvLib.Mat()
+    cvLib.GaussianBlur(src, softened, new cvLib.Size(3, 3), 0)
+    cvLib.addWeighted(src, 0.7, softened, 0.3, 0, dst)
+    softened.delete()
+  } else if (filter === "auto") {
+    const enhanced = new cvLib.Mat()
+    cvLib.convertScaleAbs(source, enhanced, 1.08, 5)
+    cvLib.cvtColor(enhanced, dst, cvLib.COLOR_GRAY2RGBA)
     enhanced.delete()
-  }
-
-  else {
+  } else {
     src.copyTo(dst)
-  }
-
-  if (removeShadows) {
-    const working =
-      dst.channels() === 1
-        ? dst
-        : (() => {
-            const temp =
-              new cvLib.Mat()
-
-            cvLib.cvtColor(
-              dst,
-              temp,
-              cvLib.COLOR_RGBA2GRAY
-            )
-
-            return temp
-          })()
-
-    const background =
-      new cvLib.Mat()
-
-    const kernel =
-      cvLib.getStructuringElement(
-        cvLib.MORPH_ELLIPSE,
-        new cvLib.Size(21, 21)
-      )
-
-    cvLib.morphologyEx(
-      working,
-      background,
-      cvLib.MORPH_OPEN,
-      kernel
-    )
-
-    const normalized =
-      new cvLib.Mat()
-
-    cvLib.divide(
-      working,
-      background,
-      normalized,
-      255
-    )
-
-    normalized.copyTo(dst)
-
-    if (working !== dst) {
-      working.delete()
-    }
-
-    background.delete()
-    kernel.delete()
-    normalized.delete()
   }
 
   const outputCanvas =
@@ -599,6 +474,8 @@ export async function applyFilters(
     )
 
   src.delete()
+  gray.delete()
+  source.delete()
   dst.delete()
 
   return result

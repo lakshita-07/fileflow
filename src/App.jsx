@@ -1849,6 +1849,10 @@ const Compress = () => {
     useState("Balanced")
   const [resultSize, setResultSize] =
     useState(null)
+  const [estimatedSizes, setEstimatedSizes] =
+    useState({})
+  const [estimating, setEstimating] =
+    useState(false)
 
   const selectFile = (e) => {
     const selected = e.target.files?.[0]
@@ -1860,11 +1864,40 @@ const Compress = () => {
     }
 
     setFile(selected)
+    setResultSize(null)
+    setEstimatedSizes({})
 
     const reader = new FileReader()
 
-    reader.onload = () =>
+    reader.onload = async () => {
       setPreview(reader.result)
+
+      setEstimating(true)
+
+      const qualityOptions = [
+        { name: "High Quality", quality: 0.9 },
+        { name: "Balanced", quality: 0.7 },
+        { name: "Maximum Reduction", quality: 0.4 }
+      ]
+
+      const estimates = await Promise.all(
+        qualityOptions.map(async option => {
+          const dataURL = await imageToDataURL(
+            reader.result,
+            "image/jpeg",
+            option.quality
+          )
+          const blob = await dataURLToBlob(dataURL)
+
+          return [option.name, blob.size]
+        })
+      )
+
+      setEstimatedSizes(
+        Object.fromEntries(estimates)
+      )
+      setEstimating(false)
+    }
 
     reader.readAsDataURL(selected)
   }
@@ -1978,7 +2011,20 @@ const Compress = () => {
                     : "border-outline"
                 }`}
               >
-                {item}
+                <span className="flex items-center justify-between gap-3">
+                  <span>{item}</span>
+                  <span className={`text-sm font-normal ${
+                    level === item
+                      ? "text-primary"
+                      : "text-on-surface-variant"
+                  }`}>
+                    {estimating
+                      ? "Calculating..."
+                      : estimatedSizes[item]
+                        ? `~${formatBytes(estimatedSizes[item])}`
+                        : "Select an image"}
+                  </span>
+                </span>
               </button>
             ))}
 
@@ -2006,6 +2052,8 @@ const Resize = () => {
   const [preview, setPreview] = useState(null)
   const [width, setWidth] = useState("")
   const [height, setHeight] = useState("")
+  const [originalDimensions, setOriginalDimensions] =
+    useState(null)
   const [keepRatio, setKeepRatio] =
     useState(true)
 
@@ -2019,11 +2067,19 @@ const Resize = () => {
     }
 
     setFile(selected)
+    setOriginalDimensions(null)
 
     const reader = new FileReader()
 
-    reader.onload = () => {
+    reader.onload = async () => {
       setPreview(reader.result)
+
+      const image = await loadImage(reader.result)
+
+      setOriginalDimensions({
+        width: image.naturalWidth,
+        height: image.naturalHeight
+      })
     }
 
     reader.readAsDataURL(selected)
@@ -2099,9 +2155,12 @@ const Resize = () => {
             onClick={() =>
               inputRef.current?.click()
             }
-            className="w-full rounded-xl border-2 border-dashed border-outline-variant p-10"
+            className={preview
+              ? "rounded-lg border border-outline px-4 py-2 text-sm font-bold"
+              : "w-full rounded-xl border-2 border-dashed border-outline-variant p-10"
+            }
           >
-            Select Image
+            {preview ? "Change Image" : "Select Image"}
           </button>
 
           <input
@@ -2113,10 +2172,18 @@ const Resize = () => {
           />
 
           {preview && (
-            <img
-              src={preview}
-              className="mt-5 max-h-80 w-full rounded-lg object-contain bg-surface-container"
-            />
+            <>
+              <img
+                src={preview}
+                className="mt-5 max-h-80 w-full rounded-lg object-contain bg-surface-container"
+              />
+
+              {originalDimensions && (
+                <p className="mt-3 text-sm text-on-surface-variant">
+                  Original size: {originalDimensions.width} x {originalDimensions.height} px
+                </p>
+              )}
+            </>
           )}
 
         </Panel>
