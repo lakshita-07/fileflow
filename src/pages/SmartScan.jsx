@@ -693,56 +693,188 @@ export default function SmartScan() {
   return dataURLToBlob(data)
 }
 
-  async function exportFile() {
-    if (!processedPreview) {
-      setStatus("Process the scan before exporting.")
-      return
-    }
-
-    setProcessing(true)
-    setStatus("Preparing export...")
-
-    try {
-      let cleanName = filename.trim()
-
-      if (!cleanName) {
-        cleanName = "FileFlow_Scan"
-      }
-
-      cleanName = cleanName.replace(/\.(pdf|jpg|jpeg|png)$/i, "")
-
-      if (format === "PDF") {
-         const imageList = [processedPreview]
-
-         const pdfBlob = await imagesToPDF(
-            imageList,
-           `${cleanName}.pdf`
-          )
-
-         downloadBlob(
-            pdfBlob,
-           `${cleanName}.pdf`
-          )
-} else {
-        const blob = await createExportBlob()
-
-        const extension =
-          format === "PNG" ? "png" : "jpg"
-
-        downloadBlob(
-          blob,
-          `${cleanName}.${extension}`
-        )
-      }
-
-      setStatus("✓ File exported successfully")
-    } catch (error) {
-      console.error(error)
-      setStatus("Export failed.")
-    }
-
-    setProcessing(false)
+ async function exportFile() {
+  if (!originalImage) {
+    setStatus("Select an image before exporting.")
+    return
   }
+
+  setProcessing(true)
+  setStatus("Preparing export...")
+
+  try {
+    let cleanName = filename.trim()
+
+    if (!cleanName) {
+      cleanName = "FileFlow_Scan"
+    }
+
+    cleanName = cleanName.replace(
+      /\.(pdf|jpg|jpeg|png)$/i,
+      ""
+    )
+
+    // 1. Apply the crop/perspective using the dragger corners
+    let exportImage = await perspectiveCorrect(
+      originalImage,
+      corners
+    )
+
+    if (!exportImage) {
+      exportImage = originalImage
+    }
+
+    // 2. Apply selected filter
+    exportImage = await applyFilters(
+      exportImage,
+      filter,
+      removeShadows
+    )
+
+    // 3. Apply rotation
+    exportImage = rotateImage(
+      exportImage,
+      rotation
+    )
+
+    // 4. Load final processed image
+    const img = await loadImage(exportImage)
+
+    // =========================
+    // PDF EXPORT
+    // =========================
+    if (format === "PDF") {
+      const imageData = imageToDataURL(
+        img,
+        "image/jpeg",
+        sizeMode === "small" ? 0.65 : 0.9
+      )
+
+      const pdfBlob = await imagesToPDF(
+        [imageData],
+        `${cleanName}.pdf`
+      )
+
+      downloadBlob(
+        pdfBlob,
+        `${cleanName}.pdf`
+      )
+    }
+
+    // =========================
+    // PNG EXPORT
+    // =========================
+    else if (format === "PNG") {
+      const canvas = document.createElement("canvas")
+
+      canvas.width = img.naturalWidth
+      canvas.height = img.naturalHeight
+
+      const ctx = canvas.getContext("2d")
+
+      ctx.drawImage(
+        img,
+        0,
+        0,
+        canvas.width,
+        canvas.height
+      )
+
+      const blob = await new Promise(resolve => {
+        canvas.toBlob(
+          resolve,
+          "image/png"
+        )
+      })
+
+      downloadBlob(
+        blob,
+        `${cleanName}.png`
+      )
+    }
+
+    // =========================
+    // JPG EXPORT
+    // =========================
+    else {
+      let quality = 0.9
+
+      if (sizeMode === "small") {
+        quality = 0.6
+      }
+
+      if (sizeMode === "standard") {
+        quality = 0.85
+      }
+
+      // Custom target size
+      if (sizeMode === "custom") {
+        const targetBytes =
+          Number(customSize) * 1024 * 1024
+
+        let low = 0.1
+        let high = 1
+        let bestBlob = null
+
+        for (let i = 0; i < 8; i++) {
+          const testQuality =
+            (low + high) / 2
+
+          const data = imageToDataURL(
+            img,
+            "image/jpeg",
+            testQuality
+          )
+
+          const blob = dataURLToBlob(data)
+
+          if (blob.size <= targetBytes) {
+            bestBlob = blob
+            low = testQuality
+          } else {
+            high = testQuality
+          }
+        }
+
+        if (bestBlob) {
+          downloadBlob(
+            bestBlob,
+            `${cleanName}.jpg`
+          )
+
+          setStatus(
+            "✓ File exported successfully"
+          )
+
+          setProcessing(false)
+          return
+        }
+
+        quality = 0.1
+      }
+
+      const data = imageToDataURL(
+        img,
+        "image/jpeg",
+        quality
+      )
+
+      const blob = dataURLToBlob(data)
+
+      downloadBlob(
+        blob,
+        `${cleanName}.jpg`
+      )
+    }
+
+    setStatus("✓ File exported successfully")
+  } catch (error) {
+    console.error(error)
+    setStatus("Export failed.")
+  }
+
+  setProcessing(false)
+}
 
   return (
     <div className="min-h-screen bg-[#f4fbf9] text-[#1a1f1d]">
