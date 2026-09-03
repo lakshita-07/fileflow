@@ -5,7 +5,7 @@ import {
 } from "../utils/scanProcessing"
 import {
   downloadBlob
-} from "pdfExport"
+} from "../utils/pdfExport"
 
 export default function SmartCompress() {
   const [file, setFile] =

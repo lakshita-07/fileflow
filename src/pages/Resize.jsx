@@ -9,7 +9,7 @@ import {
 } from "../utils/scanProcessing"
 import {
   downloadBlob
-} from "pdfExport"
+} from "../utils/pdfExport"
 
 export default function Resize() {
   const [file, setFile] =

@@ -6,7 +6,7 @@ import {
 import {
   imagesToPDF,
   downloadBlob
-} from "pdfExport"
+} from "../utils/pdfExport"
 
 export default function Convert() {
   const [file, setFile] =

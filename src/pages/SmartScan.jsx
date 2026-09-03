@@ -7,7 +7,7 @@ import {
   rotateImage
 } from "../utils/scanProcessing"
 
-import { imagesToPDF, downloadBlob } from "../utils/pdfexport"
+import { imagesToPDF, downloadBlob } from "../utils/pdfExport"
 
 
 function fileSize(bytes) {
