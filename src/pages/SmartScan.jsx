@@ -80,10 +80,70 @@ function CropEditor({ corners, setCorners }) {
     e.preventDefault()
     e.stopPropagation()
 
-    dragging.current = index
+    dragging.current = {
+      type: "corner",
+      index
+    }
 
     window.addEventListener("pointermove", moveCorner)
     window.addEventListener("pointerup", stopDrag)
+  }
+
+  function startEdgeDrag(edge, e) {
+    e.preventDefault()
+    e.stopPropagation()
+
+    dragging.current = {
+      type: "edge",
+      edge
+    }
+
+    window.addEventListener("pointermove", moveCorner)
+    window.addEventListener("pointerup", stopDrag)
+  }
+
+  function startNearestEdgeDrag(e) {
+    const rect = containerRef.current?.getBoundingClientRect()
+
+    if (!rect) return
+
+    const point = {
+      x: ((e.clientX - rect.left) / rect.width) * 100,
+      y: ((e.clientY - rect.top) / rect.height) * 100
+    }
+
+    const edges = [
+      ["top", corners[0], corners[1]],
+      ["right", corners[1], corners[2]],
+      ["bottom", corners[2], corners[3]],
+      ["left", corners[3], corners[0]]
+    ]
+
+    const closestEdge = edges.reduce((closest, edge) => {
+      const [, start, end] = edge
+      const dx = end.x - start.x
+      const dy = end.y - start.y
+      const lengthSquared = dx * dx + dy * dy
+      const projection = Math.max(
+        0,
+        Math.min(
+          1,
+          ((point.x - start.x) * dx +
+            (point.y - start.y) * dy) /
+            lengthSquared
+        )
+      )
+      const distance = Math.hypot(
+        point.x - (start.x + projection * dx),
+        point.y - (start.y + projection * dy)
+      )
+
+      return distance < closest.distance
+        ? { edge: edge[0], distance }
+        : closest
+    }, { edge: "top", distance: Infinity })
+
+    startEdgeDrag(closestEdge.edge, e)
   }
 
   function moveCorner(e) {
@@ -107,20 +167,35 @@ function CropEditor({ corners, setCorners }) {
     setCorners(prev => {
       const updated = [...prev]
 
-      if (dragging.current === 0) {
-        updated[0] = { x, y }
-      }
+      if (dragging.current.type === "corner") {
+        updated[dragging.current.index] = { x, y }
+      } else {
+        const edgeCorners = {
+          top: [0, 1],
+          right: [1, 2],
+          bottom: [2, 3],
+          left: [3, 0]
+        }[dragging.current.edge]
 
-      if (dragging.current === 1) {
-        updated[1] = { x, y }
-      }
-
-      if (dragging.current === 2) {
-        updated[2] = { x, y }
-      }
-
-      if (dragging.current === 3) {
-        updated[3] = { x, y }
+        if (dragging.current.edge === "top" || dragging.current.edge === "bottom") {
+          updated[edgeCorners[0]] = {
+            ...updated[edgeCorners[0]],
+            y
+          }
+          updated[edgeCorners[1]] = {
+            ...updated[edgeCorners[1]],
+            y
+          }
+        } else {
+          updated[edgeCorners[0]] = {
+            ...updated[edgeCorners[0]],
+            x
+          }
+          updated[edgeCorners[1]] = {
+            ...updated[edgeCorners[1]],
+            x
+          }
+        }
       }
 
       return updated
@@ -175,6 +250,8 @@ function CropEditor({ corners, setCorners }) {
           stroke="#14251c"
           strokeWidth="1"
           strokeLinejoin="round"
+          pointerEvents="stroke"
+          onPointerDown={startNearestEdgeDrag}
         />
       </svg>
 
@@ -290,9 +367,20 @@ export default function SmartScan() {
   const [cameraOpen, setCameraOpen] =
     useState(false)
 
+  const [zoomRange, setZoomRange] =
+    useState(null)
+
+  const [zoom, setZoom] =
+    useState(null)
+
   const videoRef = useRef(null)
 
   const streamRef = useRef(null)
+
+
+  function getCameraTrack() {
+    return streamRef.current?.getVideoTracks?.()[0]
+  }
 
 
   const filters = [
@@ -456,11 +544,71 @@ export default function SmartScan() {
       const stream =
         await navigator.mediaDevices.getUserMedia({
           video: {
-            facingMode: "environment"
+            facingMode: {
+              ideal: "environment"
+            },
+            width: {
+              ideal: 1920
+            },
+            height: {
+              ideal: 1080
+            }
           }
         })
 
       streamRef.current = stream
+
+      const track =
+        stream.getVideoTracks()[0]
+
+      const capabilities =
+        track?.getCapabilities?.()
+
+      if (capabilities?.zoom) {
+        const nextZoomRange = {
+          min: capabilities.zoom.min,
+          max: capabilities.zoom.max,
+          step: capabilities.zoom.step || 0.1
+        }
+
+        setZoomRange(nextZoomRange)
+        setZoom(capabilities.zoom.min)
+
+        if (track.applyConstraints) {
+          try {
+            await track.applyConstraints({
+              advanced: [
+                {
+                  zoom: capabilities.zoom.min
+                }
+              ]
+            })
+          } catch {
+            setZoomRange(null)
+            setZoom(null)
+          }
+        }
+      } else {
+        setZoomRange(null)
+        setZoom(null)
+      }
+
+      if (
+        track.applyConstraints &&
+        capabilities?.focusMode?.includes("continuous")
+      ) {
+        try {
+          await track.applyConstraints({
+            advanced: [
+              {
+                focusMode: "continuous"
+              }
+            ]
+          })
+        } catch {
+          // Continuous autofocus is optional.
+        }
+      }
 
       setCameraOpen(true)
 
@@ -495,7 +643,73 @@ export default function SmartScan() {
       streamRef.current = null
     }
 
+    setZoomRange(null)
+    setZoom(null)
     setCameraOpen(false)
+  }
+
+
+  async function focusCamera(e) {
+    const video = videoRef.current
+    const track = getCameraTrack()
+    const capabilities = track?.getCapabilities?.()
+
+    if (
+      !video ||
+      !track?.applyConstraints ||
+      !capabilities?.focusPointX ||
+      !capabilities?.focusPointY
+    ) {
+      return
+    }
+
+    const rect = video.getBoundingClientRect()
+    const focusPointX =
+      Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+    const focusPointY =
+      Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height))
+
+    try {
+      await track.applyConstraints({
+        advanced: [
+          {
+            focusMode: "single-shot",
+            focusPointX,
+            focusPointY
+          }
+        ]
+      })
+
+      if (capabilities.focusMode?.includes("continuous")) {
+        await track.applyConstraints({
+          advanced: [
+            {
+              focusMode: "continuous"
+            }
+          ]
+        })
+      }
+    } catch {
+      // Focus controls are optional and vary by browser.
+    }
+  }
+
+
+  async function changeZoom(value) {
+    const track = getCameraTrack()
+
+    if (!track?.applyConstraints) return
+
+    const nextZoom = Number(value)
+
+    try {
+      await track.applyConstraints({
+        advanced: [{ zoom: nextZoom }]
+      })
+      setZoom(nextZoom)
+    } catch {
+      // Zoom controls are optional and vary by browser.
+    }
   }
 
 
@@ -565,7 +779,22 @@ export default function SmartScan() {
         await loadImage(baseImage)
 
 
-      if (perspectiveFix) {
+      if (autoDetect) {
+        const detected =
+          await detectDocumentCorners(working)
+
+        if (detected && perspectiveFix) {
+          const corrected =
+            await perspectiveCorrect(
+              working,
+              detected
+            )
+
+          if (corrected) {
+            working = corrected
+          }
+        }
+      } else if (perspectiveFix) {
 
         const corrected =
           await perspectiveCorrect(
@@ -625,105 +854,13 @@ export default function SmartScan() {
 
   }, [
     baseImage,
+    autoDetect,
     corners,
     perspectiveFix,
     filter,
     removeShadows,
     rotation
   ])
-
-
-  /* =========================================================
-     SCAN DOCUMENT
-     ========================================================= */
-
-  async function scanDocument() {
-
-    if (!baseImage) return
-
-    setProcessing(true)
-
-    setStatus(
-      "Processing document..."
-    )
-
-    try {
-
-      let working =
-        await loadImage(baseImage)
-
-
-      if (autoDetect) {
-
-        const detected =
-          await detectDocumentCorners(
-            working
-          )
-
-        if (detected) {
-
-          setCorners(detected)
-
-          if (perspectiveFix) {
-
-            const corrected =
-              await perspectiveCorrect(
-                working,
-                detected
-              )
-
-            if (corrected) {
-              working = corrected
-            }
-          }
-        }
-
-      } else if (perspectiveFix) {
-
-        const corrected =
-          await perspectiveCorrect(
-            working,
-            corners
-          )
-
-        if (corrected) {
-          working = corrected
-        }
-      }
-
-
-      const filtered =
-        await applyFilters(
-          working,
-          filter,
-          removeShadows
-        )
-
-
-      const rotated =
-        rotateImage(
-          filtered,
-          rotation
-        )
-
-
-      setProcessedPreview(rotated)
-
-      setStatus(
-        "✓ Scan processed"
-      )
-
-    } catch (error) {
-
-      console.error(error)
-
-      setStatus(
-        "Could not process document."
-      )
-    }
-
-    setProcessing(false)
-  }
 
 
   /* =========================================================
@@ -2126,22 +2263,6 @@ export default function SmartScan() {
               {/* ACTIONS */}
 
               <button
-                onClick={scanDocument}
-                disabled={
-                  !baseImage ||
-                  processing
-                }
-                className="w-full mt-5 py-3 rounded-lg bg-[#1b3125] text-white font-bold disabled:opacity-50"
-              >
-
-                {processing
-                  ? "Processing..."
-                  : "Scan Document →"}
-
-              </button>
-
-
-              <button
                 onClick={exportFile}
                 disabled={
                   !processedPreview ||
@@ -2195,8 +2316,28 @@ export default function SmartScan() {
               ref={videoRef}
               autoPlay
               playsInline
+              onClick={focusCamera}
               className="w-full rounded-lg bg-black"
             />
+
+            {zoomRange && (
+              <label className="mt-3 flex items-center gap-3 text-sm font-semibold">
+                <span>Zoom</span>
+                <input
+                  type="range"
+                  min={zoomRange.min}
+                  max={zoomRange.max}
+                  step={zoomRange.step}
+                  value={zoom}
+                  onChange={e => changeZoom(e.target.value)}
+                  className="min-w-0 flex-1"
+                  aria-label="Camera zoom"
+                />
+                <span className="w-10 text-right">
+                  {zoom?.toFixed(1)}x
+                </span>
+              </label>
+            )}
 
 
             <button
