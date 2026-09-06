@@ -4,7 +4,7 @@ FileFlow is a privacy-focused file utility suite that processes files locally in
 
 ## Features
 
-- **Smart Scan:** Detect document edges with OpenCV.js, adjust crop corners, apply image filters, and export scans as PDFs.
+- **Smart Scan:** Capture documents with the device camera or select an image, detect document edges with OpenCV.js, adjust crop corners, apply image filters, and export scans as PDFs.
 - **Convert:** Convert images between JPG, PNG, WebP, and PDF.
 - **Smart Compress:** Compress images with maximum-reduction, balanced, and high-quality presets.
 - **Resize:** Resize images by exact dimensions or percentage and export them as JPG, PNG, or WebP.
@@ -19,6 +19,7 @@ FileFlow is a privacy-focused file utility suite that processes files locally in
 - OpenCV.js for document detection and perspective correction
 - Tesseract.js for OCR capabilities
 - pdf-lib and pdfjs-dist for PDF processing
+- Local system fonts with no external font requests
 
 ## Getting Started
 
@@ -61,4 +62,6 @@ npm run lint
 
 ## Privacy
 
-FileFlow is designed for local, browser-based processing. Selected files are read by the application, transformed in memory, and downloaded directly to the device. No backend or file upload service is required.
+FileFlow is designed for local, browser-based processing. Camera access is requested through the browser and captured frames are processed in memory using the canvas API and OpenCV.js. Selected files are transformed in memory and downloaded directly to the device.
+
+FileFlow does not upload or store camera images, documents, or generated files. The Vercel deployment serves the application, but it does not receive user files. Camera access requires user permission and HTTPS in production; `localhost` is also supported during development.
